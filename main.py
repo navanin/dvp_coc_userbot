@@ -1,16 +1,18 @@
 import asyncio
 import os
 import logging
-from typing import Dict, Tuple
-from datetime import datetime
+from typing import Dict
 
 from dotenv import load_dotenv
 from telethon import TelegramClient, events
 from telethon.tl.custom import Button
 
+# Загрузка конфигурации
+load_dotenv()
+
 # Настройка логирования
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.os.getenv('LOG_LEVEL', 'INFO').upper(),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('bot.log'),
@@ -20,9 +22,6 @@ logging.basicConfig(
 logger = logging.getLogger('dvp_coc_bot')
 logging.getLogger('telethon').setLevel(logging.ERROR)
 logging.getLogger('asyncio').setLevel(logging.ERROR)
-
-# Загрузка конфигурации
-load_dotenv()
 
 # Конфигурационные константы
 CONFIG = {
@@ -77,9 +76,14 @@ async def initialize_clients():
 
         await bot.start(bot_token=CONFIG['BOT_TOKEN'])
         logger.info("Bot client started successfully")
+        bot_info = await bot.get_me()
+        logger.debug(f"Bot logged as {bot_info.first_name} {bot_info.last_name} (@{bot_info.username}, id: {bot_info.id})")
 
         await userbot.start(phone=CONFIG['USERBOT_PHONE_NUMBER'])
         logger.info("Userbot client started successfully")
+        userbot_info = await userbot.get_me()
+        logger.debug(f"UserBot logged as {userbot_info.first_name} {userbot_info.last_name} (@{userbot_info.username}, id: {userbot_info.id})")
+
 
         return bot, userbot
     except Exception as e:
