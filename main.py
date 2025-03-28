@@ -34,6 +34,7 @@ CONFIG = {
 }
 
 TRIGGERS = set(filter(None, os.getenv('TRIGGERS', '').split(',')))
+logger.info(f"------ SUMMARY ------")
 logger.info(f"Loaded {len(TRIGGERS)} triggers from config")
 
 BUTTONS = [
@@ -70,6 +71,7 @@ message_queue: Dict[int, int] = {}
 async def initialize_clients():
     """Инициализация клиентов Telegram"""
     try:
+        logger.info(f"------ BOTS INITIALIZATION ------")
         logger.info("Initializing Telegram clients...")
         bot = TelegramClient('bot', CONFIG['USERBOT_API_ID'], CONFIG['USERBOT_API_HASH'])
         userbot = TelegramClient('userbot', CONFIG['USERBOT_API_ID'], CONFIG['USERBOT_API_HASH'])
@@ -83,7 +85,6 @@ async def initialize_clients():
         logger.info("Userbot client started successfully")
         userbot_info = await userbot.get_me()
         logger.debug(f"UserBot logged as {userbot_info.first_name} {userbot_info.last_name} (@{userbot_info.username}, id: {userbot_info.id})")
-
 
         return bot, userbot
     except Exception as e:
@@ -174,6 +175,12 @@ async def main():
         logger.info("Starting bot application")
         bot, userbot = await initialize_clients()
 
+        source_chat_info = await userbot.get_entity(CONFIG['SOURCE_CHAT_ID'])
+        target_chat_info = await userbot.get_entity(CONFIG['TARGET_CHAT_ID'])
+        logger.debug(f"------ CHATS INFORMATION ------")
+        logger.debug(f"Source chat is {source_chat_info.title} (id={source_chat_info.id}). Considered class is {type(source_chat_info)}.")
+        logger.debug(f"Target chat is {target_chat_info.title} (id={target_chat_info.id}). Considered class is {type(source_chat_info)}.")
+
         # Регистрация обработчиков событий
         bot.add_event_handler(
             lambda e: handle_callback(e, userbot),
@@ -183,6 +190,7 @@ async def main():
             lambda e: handle_new_message(e, bot),
             events.NewMessage(chats=CONFIG['SOURCE_CHAT_ID'])
         )
+        logger.info("|------ APPLICATION LOGS ------|")
         logger.info("Event handlers registered")
 
         # Запуск ботов
