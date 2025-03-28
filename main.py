@@ -101,7 +101,7 @@ async def handle_callback(event: events.CallbackQuery.Event, userbot: TelegramCl
         print("error")
         if event.data not in RESPONSES:
             logger.warning(f"Unknown callback data: {event.data}")
-            return
+            raise Exception('Unknown callback data recieved')
 
         # Получение ID сообщений и их удаление после
         int_msg_id = event.original_update.msg_id
@@ -114,14 +114,13 @@ async def handle_callback(event: events.CallbackQuery.Event, userbot: TelegramCl
 
         if not src_msg_id:
             logger.error(f"Original message ID not found in queue for callback: {int_msg_id}")
-            return
+            raise Exception('Original message ID not found in callback queue')
 
         msg_template, coc_response = RESPONSES[event.data]
         original = await event.client.get_messages(
             event.original_update.peer,
             ids=int_msg_id
         )
-        raise Exception('Bug')
         logger.info(f"Processing callback: {event.data.decode()} for message {src_msg_id}")
         if event.data == b"alert_other":
             await event.edit(
