@@ -30,7 +30,8 @@ CONFIG = {
     'USERBOT_PHONE_NUMBER': os.getenv('USERBOT_PHONE_NUMBER'),
     'BOT_TOKEN': os.getenv('BOT_TOKEN'),
     'SOURCE_CHAT_ID': int(os.getenv('SOURCE_CHAT_ID')),
-    'TARGET_CHAT_ID': int(os.getenv('TARGET_CHAT_ID'))
+    'TARGET_CHAT_ID': int(os.getenv('TARGET_CHAT_ID')),
+    'ADMIN_CONTACT': os.getenv('ADMIN_CONTACT')
 }
 
 TRIGGERS = set(filter(None, os.getenv('TRIGGERS', '').split(',')))
@@ -65,6 +66,8 @@ RESPONSES = {
     )
 }
 
+ERROR_MSG = f"**Внимание!** \n\nБыло получено сообщение в COC, однако сломалась обработка! Ответ в СОС **не отправлен**! Пожалуйста, обработайте алерт **вручную**.\n\n @{CONFIG['ADMIN_CONTACT']}"
+
 # Глобальная очередь сообщений
 message_queue: Dict[int, int] = {}
 
@@ -95,10 +98,9 @@ async def handle_callback(event: events.CallbackQuery.Event, userbot: TelegramCl
     """Обработка callback-запросов от кнопок"""
     try:
         logger.debug(f"Received callback: {event.data}")
-
         if event.data not in RESPONSES:
             logger.warning(f"Unknown callback data: {event.data}")
-            return
+            raise Exception('Unknown callback data recieved')
 
         # Получение ID сообщений и их удаление после
         int_msg_id = event.original_update.msg_id
@@ -111,14 +113,13 @@ async def handle_callback(event: events.CallbackQuery.Event, userbot: TelegramCl
 
         if not src_msg_id:
             logger.error(f"Original message ID not found in queue for callback: {int_msg_id}")
-            return
+            raise Exception('Original message ID not found in callback queue')
 
         msg_template, coc_response = RESPONSES[event.data]
         original = await event.client.get_messages(
             event.original_update.peer,
             ids=int_msg_id
         )
-
         logger.info(f"Processing callback: {event.data.decode()} for message {src_msg_id}")
         if event.data == b"alert_other":
             await event.edit(
@@ -143,6 +144,19 @@ async def handle_callback(event: events.CallbackQuery.Event, userbot: TelegramCl
         logger.info(f"Successfully processed callback for message {src_msg_id}")
     except Exception as e:
         logger.error(f"Error handling callback: {e}", exc_info=True)
+        await asyncio.gather(
+            event.edit(
+                text=msg_template.format(text=original.text, userinfo=responsible_info),
+                parse_mode='md',
+                buttons=None
+            ),
+            event.reply(
+                message=ERROR_MSG + f" @{responsible_id.username}",
+                parse_mode='md',
+                buttons=None
+            )
+        )
+
 
 async def handle_new_message(event: events.NewMessage.Event, bot: TelegramClient):
     """Обработка новых сообщений из чата"""
@@ -168,6 +182,11 @@ async def handle_new_message(event: events.NewMessage.Event, bot: TelegramClient
         logger.info(f"Forwarded message {msg.id} to target chat.")
     except Exception as e:
         logger.error(f"Error handling new message: {e}", exc_info=True)
+        await bot.send_message(
+            text=ERROR_MSG,
+            parse_mode='md',
+            buttons=None
+        )
 
 async def main():
     """Основная функция запуска ботов"""
