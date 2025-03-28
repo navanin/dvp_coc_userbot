@@ -98,7 +98,6 @@ async def handle_callback(event: events.CallbackQuery.Event, userbot: TelegramCl
     """Обработка callback-запросов от кнопок"""
     try:
         logger.debug(f"Received callback: {event.data}")
-        print("error")
         if event.data not in RESPONSES:
             logger.warning(f"Unknown callback data: {event.data}")
             raise Exception('Unknown callback data recieved')
