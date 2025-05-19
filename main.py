@@ -1,11 +1,12 @@
-import asyncio
 import os
+import random
 import logging
+import asyncio
 from typing import Dict
 
 from dotenv import load_dotenv
-from telethon import TelegramClient, events
 from telethon.tl.custom import Button
+from telethon import TelegramClient, events
 
 # Загрузка конфигурации
 load_dotenv()
@@ -49,21 +50,38 @@ BUTTONS = [
 RESPONSES = {
     b"alert_recieved": (
         "~~{text}~~\n\n**Алерт принят в работу, отправлено сообщение в COC!**\n\nОтветственный - {userinfo}",
-        "Принято, спасибо"
+        [
+            "Принято, спасибо",
+            "Приняли в работу",
+            "Ок, смотрю",
+            "Щас гляну, спасибо большое",
+            "Угу, принято, спасибо"
+        ]
     ),
     b"alert_not_critical": (
         "~~{text}~~\n\n**Алерт принят как некритический, отправлено сообщение в COC!**\n\nОтветственный - {userinfo}",
-        "Не критично, починим попозже, пока не реагируйте, пожалуйста"
+        [
+            "Не критично, починим попозже",
+            "Принято, не срочно",
+            "Это не страшно, спасибо",
+            "Ага, спасибо! Принято, но обработаем чуть позже - критики нет"
+        ]
     ),
     b"alert_flapping": (
         "~~{text}~~\n\n**Алерт принят как флапающий, отправлено сообщение в COC!**\n\nОтветственный - {userinfo}",
-        "Похоже на флап, не актуально"
+        [
+            "Ага, похоже на флап",
+            "Принято, скорее всего флап",
+            "Пока не актуально",
+            "Флапает, да - скоро перестанет"
+        ]
     ),
     b"alert_other": (
         "~~{text}~~\n\n**Алерт проигнорирован или обработан вручную.**\n\nОтветственный - {userinfo}",
         None
     )
 }
+
 
 # Глобальная очередь сообщений
 message_queue: Dict[int, int] = {}
@@ -113,7 +131,9 @@ async def handle_callback(event: events.CallbackQuery.Event, userbot: TelegramCl
             logger.error(f"Original message ID not found in queue for callback: {int_msg_id}")
             return
 
-        msg_template, coc_response = RESPONSES[event.data]
+        msg_template, coc_response_list = RESPONSES[event.data]
+        coc_response = random.choice(coc_response_list)
+
         original = await event.client.get_messages(
             event.original_update.peer,
             ids=int_msg_id
