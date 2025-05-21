@@ -132,7 +132,11 @@ async def handle_callback(event: events.CallbackQuery.Event, userbot: TelegramCl
             return
 
         msg_template, coc_response_list = RESPONSES[event.data]
-        coc_response = random.choice(coc_response_list)
+
+        if isinstance(coc_response_list, list):
+            coc_response = random.choice(coc_response_list)
+        else:
+            coc_response = coc_response_list
 
         original = await event.client.get_messages(
             event.original_update.peer,
