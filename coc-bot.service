@@ -4,7 +4,8 @@ After=network.target
 
 [Service]
 WorkingDirectory=/opt/coc_bot/
-Restart=on-failure
+Restart=always
+RestartSec=3
 ExecStart=python /opt/coc_bot/main.py
 
 [Install]
