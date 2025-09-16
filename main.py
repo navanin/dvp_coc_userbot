@@ -9,7 +9,7 @@ from telethon.tl.custom import Button
 from telethon import TelegramClient, events
 
 # Загрузка конфигурации
-load_dotenv()
+load_dotenv(".dev.env")
 
 # Настройка логирования
 logging.basicConfig(
@@ -31,7 +31,8 @@ CONFIG = {
     'USERBOT_PHONE_NUMBER': os.getenv('USERBOT_PHONE_NUMBER'),
     'BOT_TOKEN': os.getenv('BOT_TOKEN'),
     'SOURCE_CHAT_ID': int(os.getenv('SOURCE_CHAT_ID')),
-    'TARGET_CHAT_ID': int(os.getenv('TARGET_CHAT_ID'))
+    'TARGET_CHAT_ID': int(os.getenv('TARGET_CHAT_ID')),
+    'IGNORE_MSG_FROM_ID': int(os.getenv('IGNORE_MSG_FROM_ID'))
 }
 
 TRIGGERS = set(filter(None, os.getenv('TRIGGERS', '').split(',')))
@@ -172,7 +173,21 @@ async def handle_new_message(event: events.NewMessage.Event, bot: TelegramClient
     """Обработка новых сообщений из чата"""
     try:
         msg = event.message
-        src_msg_link = f"https://t.me/c/{event.chat_id}/{event.id}"
+
+        # Тут мы декорируем chat_id из event, чтобы ссылка была валидной
+        if str(event.chat_id).__contains__("-100"):
+            decorated_chat_id = str(event.chat_id).replace("-100", "")
+        else:
+            decorated_chat_id = str(event.chat_id).replace("-", "")
+
+        src_msg_link = f"https://t.me/c/{decorated_chat_id}/{event.id}"
+
+        # Проверяем, что алерт валиден
+        if event.from_id == CONFIG['IGNORE_MSG_FROM_ID']:
+            print("Ignoring message")
+            logger.debug(f"Recieved message, doing nothing: {src_msg_link}")
+            return
+
         # logger.debug(f"New message received: {src_msg_link}")
 
         if not any(trigger in msg.text.lower() for trigger in TRIGGERS):
