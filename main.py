@@ -9,7 +9,7 @@ from telethon.tl.custom import Button
 from telethon import TelegramClient, events
 
 # Загрузка конфигурации
-load_dotenv(".dev.env")
+load_dotenv()
 
 # Настройка логирования
 logging.basicConfig(
