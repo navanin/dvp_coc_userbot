@@ -9,7 +9,7 @@ from telethon.tl.custom import Button
 from telethon import TelegramClient, events
 
 # Загрузка конфигурации
-load_dotenv()
+load_dotenv(".dev.env")
 
 # Настройка логирования
 logging.basicConfig(
@@ -183,7 +183,7 @@ async def handle_new_message(event: events.NewMessage.Event, bot: TelegramClient
         src_msg_link = f"https://t.me/c/{decorated_chat_id}/{event.id}"
 
         # Проверяем, что алерт валиден
-        if event.from_id == CONFIG['IGNORE_MSG_FROM_ID']:
+        if event.from_id.user_id == CONFIG['IGNORE_MSG_FROM_ID']:
             print("Ignoring message")
             logger.debug(f"Recieved message, doing nothing: {src_msg_link}")
             return
