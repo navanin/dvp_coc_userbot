@@ -98,7 +98,7 @@ async def initialize_clients():
         await bot.start(bot_token=CONFIG['BOT_TOKEN'])
         logger.info("Bot client started successfully")
         bot_info = await bot.get_me()
-        logger.debug(f"Bot logged as {bot_info.first_name} {bot_info.last_name} (@{bot_info.username}, id: {bot_info.id})")
+        logger.debug(f"Bot logged as {bot_info.first_name} {bot_info.last_name or '\b'} (@{bot_info.username}, id: {bot_info.id})")
 
         await userbot.start(phone=CONFIG['USERBOT_PHONE_NUMBER'])
         logger.info("Userbot client started successfully")
