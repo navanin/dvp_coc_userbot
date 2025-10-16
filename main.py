@@ -2,18 +2,44 @@ import os
 import random
 import logging
 import asyncio
+import zoneinfo
 from typing import Dict
 
 from dotenv import load_dotenv
 from telethon.tl.custom import Button
+from datetime import datetime
 from telethon import TelegramClient, events
+
+from observability.metrics import (
+    init_metrics_server,
+    set_app_start_timestamp,
+    inc_alerts_total_metric,
+    inc_alerts_handled_metric,
+    inc_errors_total_metric
+)
+from observability.statistics import send_statistics
 
 # Загрузка конфигурации
 load_dotenv()
 
+# Конфигурационные константы
+CONFIG = {
+    'TZ': zoneinfo.ZoneInfo(os.getenv('TIMEZONE', 'Europe/Moscow')),
+    'LOG_LEVEL': logging.os.getenv('LOG_LEVEL', 'INFO').upper(),
+    'METRICS_SERVER_PORT': os.getenv('METRICS_SERVER_PORT'),
+    'TRIGGERS': set(filter(None, os.getenv('TRIGGERS', '').split(','))),
+    'USERBOT_API_ID': os.getenv('USERBOT_API_ID'),
+    'USERBOT_API_HASH': os.getenv('USERBOT_API_HASH'),
+    'USERBOT_PHONE_NUMBER': os.getenv('USERBOT_PHONE_NUMBER'),
+    'BOT_TOKEN': os.getenv('BOT_TOKEN'),
+    'SOURCE_CHAT_ID': int(os.getenv('SOURCE_CHAT_ID')),
+    'TARGET_CHAT_ID': int(os.getenv('TARGET_CHAT_ID')),
+    'IGNORE_MSG_FROM_ID': int(os.getenv('IGNORE_MSG_FROM_ID'))
+}
+
 # Настройка логирования
 logging.basicConfig(
-    level=logging.os.getenv('LOG_LEVEL', 'INFO').upper(),
+    level=CONFIG['LOG_LEVEL'],
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('bot.log'),
@@ -24,32 +50,20 @@ logger = logging.getLogger('dvp_coc_bot')
 logging.getLogger('telethon').setLevel(logging.ERROR)
 logging.getLogger('asyncio').setLevel(logging.ERROR)
 
-# Конфигурационные константы
-CONFIG = {
-    'USERBOT_API_ID': os.getenv('USERBOT_API_ID'),
-    'USERBOT_API_HASH': os.getenv('USERBOT_API_HASH'),
-    'USERBOT_PHONE_NUMBER': os.getenv('USERBOT_PHONE_NUMBER'),
-    'BOT_TOKEN': os.getenv('BOT_TOKEN'),
-    'SOURCE_CHAT_ID': int(os.getenv('SOURCE_CHAT_ID')),
-    'TARGET_CHAT_ID': int(os.getenv('TARGET_CHAT_ID')),
-    'IGNORE_MSG_FROM_ID': int(os.getenv('IGNORE_MSG_FROM_ID'))
-}
-
-TRIGGERS = set(filter(None, os.getenv('TRIGGERS', '').split(',')))
 logger.info(f"------ SUMMARY ------")
-logger.info(f"Loaded {len(TRIGGERS)} triggers from config")
+logger.info(f"Loaded {len(CONFIG['TRIGGERS'])} trigger words from config")
 
 BUTTONS = [
-    [Button.inline("Принять", data=b"alert_recieved")],
+    [Button.inline("Принять", data=b"received")],
     [
-        Button.inline("Это флап", data=b"alert_flapping"),
-        Button.inline("Не критично", data=b"alert_not_critical")
+        Button.inline("Это флап", data=b"flapping"),
+        Button.inline("Не критично", data=b"not_critical")
     ],
-    [Button.inline("Вручную / другое", data=b"alert_other")]
+    [Button.inline("Вручную / другое", data=b"other")]
 ]
 
 RESPONSES = {
-    b"alert_recieved": (
+    b"received": (
         "~~{text}~~\n\n**Алерт принят в работу, отправлено сообщение в COC!**\n\nОтветственный - {userinfo}",
         [
             "Принято, спасибо",
@@ -59,7 +73,7 @@ RESPONSES = {
             "Угу, принято, спасибо"
         ]
     ),
-    b"alert_not_critical": (
+    b"not_critical": (
         "~~{text}~~\n\n**Алерт принят как некритический, отправлено сообщение в COC!**\n\nОтветственный - {userinfo}",
         [
             "Не критично, починим попозже",
@@ -68,7 +82,7 @@ RESPONSES = {
             "Ага, спасибо! Принято, но обработаем чуть позже - критики нет"
         ]
     ),
-    b"alert_flapping": (
+    b"flapping": (
         "~~{text}~~\n\n**Алерт принят как флапающий, отправлено сообщение в COC!**\n\nОтветственный - {userinfo}",
         [
             "Ага, похоже на флап",
@@ -77,17 +91,16 @@ RESPONSES = {
             "Флапает, да - скоро перестанет"
         ]
     ),
-    b"alert_other": (
+    b"other": (
         "~~{text}~~\n\n**Алерт проигнорирован или обработан вручную.**\n\nОтветственный - {userinfo}",
         None
     )
 }
 
-
 # Глобальная очередь сообщений
 message_queue: Dict[int, int] = {}
 
-async def initialize_clients():
+async def initialize_clients() -> tuple[TelegramClient, TelegramClient]:
     """Инициализация клиентов Telegram"""
     try:
         logger.info(f"------ BOTS INITIALIZATION ------")
@@ -110,7 +123,7 @@ async def initialize_clients():
         logger.error(f"Error initializing clients: {e}")
         raise
 
-async def handle_callback(event: events.CallbackQuery.Event, userbot: TelegramClient):
+async def handle_callback(event: events.CallbackQuery.Event, userbot: TelegramClient) -> None:
     """Обработка callback-запросов от кнопок"""
     try:
         logger.debug(f"Received callback: {event.data}")
@@ -145,12 +158,13 @@ async def handle_callback(event: events.CallbackQuery.Event, userbot: TelegramCl
         )
 
         logger.info(f"Processing callback: {event.data.decode()} for message {src_msg_id}")
-        if event.data == b"alert_other":
+        if event.data == b"other":
             await event.edit(
                 text=msg_template.format(text=original.text, userinfo=responsible_info),
                 parse_mode='md',
                 buttons=None
             )
+            inc_alerts_handled_metric(callback=event.data.decode("utf-8"), responsible=responsible_id.username)
             return
 
         await asyncio.gather(
@@ -166,34 +180,33 @@ async def handle_callback(event: events.CallbackQuery.Event, userbot: TelegramCl
             )
         )
         logger.info(f"Successfully processed callback for message {src_msg_id}")
+        inc_alerts_handled_metric(callback=event.data.decode("utf-8"), responsible=responsible_id.username)
     except Exception as e:
+        inc_errors_total_metric(handler="callback")
         logger.error(f"Error handling callback: {e}", exc_info=True)
 
-async def handle_new_message(event: events.NewMessage.Event, bot: TelegramClient):
+async def handle_new_message(event: events.NewMessage.Event, bot: TelegramClient) -> None:
     """Обработка новых сообщений из чата"""
     try:
         msg = event.message
 
-        # Тут мы декорируем chat_id из event, чтобы ссылка была валидной
+        # Проверяем, что сообщение является алертом: отправлено не игнорируемым пользователем и содержит триггеры
+        if event.from_id.user_id == CONFIG['IGNORE_MSG_FROM_ID']:
+            print("Ignoring message from user ignored via environment variable")
+            return
+        if not any(trigger in msg.text.lower() for trigger in CONFIG['TRIGGERS']):
+            return
+
+        # На этом этапе, сообщение считается валидным алертом
+        inc_alerts_total_metric();
+
+        # Обработка chat_id из event, чтобы ссылка на исходный чат была валидной
         if str(event.chat_id).__contains__("-100"):
             decorated_chat_id = str(event.chat_id).replace("-100", "")
         else:
             decorated_chat_id = str(event.chat_id).replace("-", "")
 
         src_msg_link = f"https://t.me/c/{decorated_chat_id}/{event.id}"
-
-        # Проверяем, что алерт валиден
-        if event.from_id.user_id == CONFIG['IGNORE_MSG_FROM_ID']:
-            print("Ignoring message")
-            logger.debug(f"Recieved message, doing nothing: {src_msg_link}")
-            return
-
-        # logger.debug(f"New message received: {src_msg_link}")
-
-        if not any(trigger in msg.text.lower() for trigger in TRIGGERS):
-            # logger.debug(f"Message {msg.id} doesn't contain any triggers")
-            return
-
         logger.info(f"Processing triggered message: {src_msg_link} ({msg.id})")
         response = f"{msg.text}\n\nСсылка: {src_msg_link}"
 
@@ -206,10 +219,19 @@ async def handle_new_message(event: events.NewMessage.Event, bot: TelegramClient
         message_queue[internal_response.id] = event.message.id
         logger.info(f"Forwarded message {msg.id} to target chat.")
     except Exception as e:
+        inc_errors_total_metric(handler="message")
         logger.error(f"Error handling new message: {e}", exc_info=True)
 
-async def main():
-    """Основная функция запуска ботов"""
+async def main() -> None:
+    """Основная функция запуска приложения"""
+    APP_START_TIMESTAMP = datetime.now(CONFIG['TZ'])
+    try:
+        init_metrics_server(port=CONFIG['METRICS_SERVER_PORT'])
+        set_app_start_timestamp(APP_START_TIMESTAMP)
+        logger.info(f"Successfully started metrics server on :{CONFIG['METRICS_SERVER_PORT']}!")
+    except Exception as e:
+        logger.error(f"Caught error while starting metrics server: {e}", exc_info=True)
+
     try:
         logger.info("Starting bot application")
         bot, userbot = await initialize_clients()
@@ -221,19 +243,23 @@ async def main():
         logger.debug(f"Target chat is {target_chat_info.title} (id={target_chat_info.id}). Considered class is {type(source_chat_info)}.")
 
         # Регистрация обработчиков событий
+        userbot.add_event_handler(
+            lambda e: handle_new_message(e, bot),
+            events.NewMessage(chats=CONFIG['SOURCE_CHAT_ID'])
+        )
         bot.add_event_handler(
             lambda e: handle_callback(e, userbot),
             events.CallbackQuery()
         )
-        userbot.add_event_handler(
-            lambda e: handle_new_message(e, bot),
-            events.NewMessage(chats=CONFIG['SOURCE_CHAT_ID'])
+        bot.add_event_handler(
+            lambda e: e.reply(message=send_statistics(tz = CONFIG['TZ'], app_start_ts=APP_START_TIMESTAMP)),
+            events.NewMessage(pattern='/stats')
         )
         logger.info("|------ APPLICATION LOGS ------|")
         logger.info("Event handlers registered")
 
         # Запуск ботов
-        logger.info("Starting bots...")
+        logger.info("Bots considered as ready")
         await asyncio.gather(
             bot.run_until_disconnected(),
             userbot.run_until_disconnected()
@@ -247,6 +273,6 @@ if __name__ == '__main__':
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
+        logger.info("Bot stopped by user input")
     except Exception as e:
         logger.critical(f"Unhandled exception: {e}", exc_info=True)
