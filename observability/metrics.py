@@ -19,6 +19,11 @@ METRIC_APP_START_TIME = Gauge(
     "UNIX timestamp of application start",
     registry=_registry,
 )
+METRIC_LAST_ALERT_RECIEVED_TIME = Gauge(
+    "last_alert_timestamp_seconds",
+    "UNIX timestamp of last alert recieved",
+    registry=_registry,
+)
 
 METRIC_ALERTS_TOTAL = Counter(
     "alerts_total",
@@ -53,6 +58,9 @@ def init_metrics_server(port: int = 9100) -> None:
 
 def set_app_start_timestamp(app_start_ts: datetime) -> None:
     METRIC_APP_START_TIME.set(app_start_ts.timestamp())
+
+def set_last_alert_timestamp(last_alert_time: datetime) -> None:
+    METRIC_LAST_ALERT_RECIEVED_TIME.set(last_alert_time.timestamp())
 
 def inc_alerts_total_metric() -> None:
     METRIC_ALERTS_TOTAL.inc()

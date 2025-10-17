@@ -13,6 +13,7 @@ from telethon import TelegramClient, events
 from observability.metrics import (
     init_metrics_server,
     set_app_start_timestamp,
+    set_last_alert_timestamp,
     inc_alerts_total_metric,
     inc_alerts_handled_metric,
     inc_errors_total_metric
@@ -198,7 +199,8 @@ async def handle_new_message(event: events.NewMessage.Event, bot: TelegramClient
             return
 
         # На этом этапе, сообщение считается валидным алертом
-        inc_alerts_total_metric();
+        inc_alerts_total_metric()
+        set_last_alert_timestamp(datetime.now(CONFIG['TZ']))
 
         # Обработка chat_id из event, чтобы ссылка на исходный чат была валидной
         if str(event.chat_id).__contains__("-100"):
