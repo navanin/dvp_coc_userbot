@@ -9,6 +9,27 @@ from observability.metrics import (
 )
 
 logger = logging.getLogger('dvp_coc_bot')
+
+def collect_alerts_by_resolution():
+    all_metrics = METRIC_ALERTS_HANDLED_TOTAL.collect()
+
+    # Инициализируем счетчики
+    alerts_dict = {
+        "received": 0,
+        "flapping": 0,
+        "not_critical": 0,
+        "other": 0
+    }
+
+    # Суммируем значения
+    for metric in all_metrics:
+        for sample in metric.samples:
+            if sample.name.endswith("_total"):
+                resolution = sample.labels.get("resolution")
+                if resolution in alerts_dict:
+                    alerts_dict[resolution] += int(sample.value)
+    return alerts_dict
+
 def send_statistics(tz: zoneinfo.ZoneInfo, app_start_ts: datetime) -> str:
     logger.debug("Recieved statistics request. Sending..."),
 
@@ -39,19 +60,16 @@ def send_statistics(tz: zoneinfo.ZoneInfo, app_start_ts: datetime) -> str:
     days_without_alerts = (datetime.now(tz) - last_alert_dt).days
     days_without_alerts_msg_part = f"Дней без алертов: {days_without_alerts}\n\n"
 
-    alerts_total        = int(METRIC_ALERTS_TOTAL._value.get())
-    alerts_received     = int(sum(child.get() for (res, _), child in METRIC_ALERTS_HANDLED_TOTAL._metrics.items() if res == 'received'))
-    alerts_flapping     = int(sum(child.get() for (res, _), child in METRIC_ALERTS_HANDLED_TOTAL._metrics.items() if res == 'flapping'))
-    alerts_not_critical = int(sum(child.get() for (res, _), child in METRIC_ALERTS_HANDLED_TOTAL._metrics.items() if res == 'not_critical'))
-    alerts_other        = int(sum(child.get() for (res, _), child in METRIC_ALERTS_HANDLED_TOTAL._metrics.items() if res == 'other'))
+    alerts_total         = int(METRIC_ALERTS_TOTAL._value.get())
+    alerts_by_resolution = collect_alerts_by_resolution()
 
     alerts_stats_msg_part = f"Все получено алертов - {alerts_total}.\n"
     if alerts_total > 0:
         alerts_stats_msg_part += f"**Из них:**\n"
-        alerts_stats_msg_part += f"Принято - {alerts_received}\n"
-        alerts_stats_msg_part += f"Флапы  - {alerts_flapping}\n"
-        alerts_stats_msg_part += f"Не критичны - {alerts_not_critical}\n"
-        alerts_stats_msg_part += f"Обработаны вручную - {alerts_other}\n"
+        alerts_stats_msg_part += f"Принято - {alerts_by_resolution["received"]}\n"
+        alerts_stats_msg_part += f"Флапы  - {alerts_by_resolution["flapping"]}\n"
+        alerts_stats_msg_part += f"Не критичны - {alerts_by_resolution["not_critical"]}\n"
+        alerts_stats_msg_part += f"Обработаны вручную - {alerts_by_resolution["other"]}\n"
 
     response = header_msg_part + uptime_msg_part + days_without_alerts_msg_part + alerts_stats_msg_part
     return response
